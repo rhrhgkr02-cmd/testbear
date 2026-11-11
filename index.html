@@ -1,664 +1,829 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>MATH Survivor 3D</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MATH survivor - 3D Update</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; user-select: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        
-        /* Health & EXP Bars */
-        #hp-bar-bg { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 400px; height: 24px; background: rgba(0,0,0,0.6); border: 2px solid #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        #hp-bar-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4444, #ff6b6b); transition: width 0.2s ease-out; }
-        
-        #exp-bar-bg { position: absolute; top: 55px; left: 50%; transform: translateX(-50%); width: 70%; max-width: 350px; height: 12px; background: rgba(0,0,0,0.6); border: 1.5px solid #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        #exp-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #44ff44, #88ff88); transition: width 0.3s ease-out; }
-        
-        #level-text { position: absolute; top: 75px; left: 50%; transform: translateX(-50%); color: white; font-weight: 900; font-size: 1.2rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); letter-spacing: 1px; }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #87CEEB; /* Sky blue fallback */
+            font-family: 'Inter', sans-serif;
+            touch-action: none;
+        }
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let touches pass through to joystick/canvas */
+        }
+        /* Health Bar */
+        #health-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 24px;
+            background-color: #374151;
+            border-radius: 12px;
+            border: 3px solid #111827;
+            overflow: hidden;
+        }
+        #health-bar {
+            width: 100%;
+            height: 100%;
+            background-color: #22c55e;
+            transition: width 0.1s linear;
+        }
+        /* Virtual Joystick */
+        #joystick-area {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: auto; /* Catch touches */
+        }
+        #joystick-base {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: none;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #joystick-knob {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        /* Game Over Screen */
+        #game-over-screen {
+            pointer-events: auto;
+        }
 
-        /* Joystick */
-        #joystick-zone { position: absolute; bottom: 0; left: 0; width: 100%; height: 50%; pointer-events: auto; z-index: 20; }
-        #joystick-bg { position: absolute; width: 130px; height: 130px; background: rgba(255,255,255,0.15); border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); transform: translate(-50%, -50%); display: none; box-shadow: inset 0 0 20px rgba(255,255,255,0.2); backdrop-filter: blur(4px); }
-        #joystick-knob { position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.8); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        
-        /* Juice Effects */
-        #flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transition: opacity 0.05s ease-out; z-index: 5; mix-blend-mode: hard-light; }
-        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.4) 100%); z-index: 4; }
+        /* Juice Effects (Screen Flash) */
+        #screen-flash {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 0.15s ease-out;
+        }
+        .flash-red { background: radial-gradient(circle, rgba(255,0,0,0) 30%, rgba(255,0,0,0.6) 100%); }
+        .flash-green { background: radial-gradient(circle, rgba(0,255,0,0) 50%, rgba(74,222,128,0.3) 100%); }
     </style>
 </head>
 <body>
-    <div id="flash-overlay"></div>
-    <div id="vignette"></div>
+
+    <div id="game-container"></div>
+
     <div id="ui-layer">
-        <div id="hp-bar-bg"><div id="hp-bar-fill"></div></div>
-        <div id="exp-bar-bg"><div id="exp-bar-fill"></div></div>
-        <div id="level-text">Lv. 1</div>
-    </div>
-    <div id="joystick-zone">
-        <div id="joystick-bg"><div id="joystick-knob"></div></div>
+        <div id="screen-flash"></div>
+        <div id="health-container">
+            <div id="health-bar"></div>
+        </div>
+
+        <div id="joystick-area">
+            <div id="joystick-base">
+                <div id="joystick-knob"></div>
+            </div>
+        </div>
+
+        <div id="game-over-screen" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-black/80">
+            <h1 class="text-6xl font-extrabold text-red-500 mb-4 tracking-widest drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]">GAME OVER</h1>
+            <p class="text-white text-xl mb-8">The 3D monsters got you!</p>
+            <button onclick="window.restartGame()" class="px-10 py-4 bg-red-600 hover:bg-red-500 text-white text-2xl font-bold rounded-2xl transition-all active:scale-95 shadow-[0_6px_0_rgb(153,27,27)] hover:translate-y-[2px] hover:shadow-[0_4px_0_rgb(153,27,27)]">
+                Try Again
+            </button>
+        </div>
     </div>
 
-    <!-- Import Three.js as ES module -->
     <script type="module">
-        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+        import * as THREE from 'three';
 
-        // --- 1. SET UP SCENE, CAMERA, RENDERER ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87CEEB); // Sky blue
-        scene.fog = new THREE.FogExp2(0x87CEEB, 0.015);
+        /**
+         * MATH SURVIVOR - 3D ENGINE (Modern ES Module + Smooth Hierarchical Animation)
+         */
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // --- Global Variables ---
+        let scene, camera, renderer, clock;
+        let playerGroup, player;
+        let enemies = [];
+        let projectiles = [];
+        let butterflies = [];
+        let isGameOver = false;
         
-        // Camera container for shake effect
-        const cameraRig = new THREE.Group();
-        cameraRig.add(camera);
-        scene.add(cameraRig);
-        camera.position.set(0, 15, 20);
-        camera.lookAt(0, 0, 0);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(renderer.domElement);
-
-        // --- 2. LIGHTING ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        scene.add(ambientLight);
-
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(20, 40, 20);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.left = -30;
-        dirLight.shadow.camera.right = 30;
-        dirLight.shadow.camera.top = 30;
-        dirLight.shadow.camera.bottom = -30;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        scene.add(dirLight);
-
-        // --- 3. ENVIRONMENT (Forest, River, Rainbow) ---
-        // Ground
-        const groundGeo = new THREE.PlaneGeometry(200, 200);
-        const groundMat = new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 0.8 }); // Green grass
-        const ground = new THREE.Mesh(groundGeo, groundMat);
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        scene.add(ground);
-
-        // Winding River
-        const riverPath = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(-50, 0.1, -80),
-            new THREE.Vector3(-20, 0.1, -40),
-            new THREE.Vector3(10, 0.1, 0),
-            new THREE.Vector3(-10, 0.1, 40),
-            new THREE.Vector3(30, 0.1, 80)
-        ]);
-        const tubeGeo = new THREE.TubeGeometry(riverPath, 64, 4, 8, false);
-        const riverMat = new THREE.MeshStandardMaterial({ color: 0x42A5F5, transparent: true, opacity: 0.8, roughness: 0.1 });
-        const river = new THREE.Mesh(tubeGeo, riverMat);
-        river.scale.y = 0.05; // Flatten tube to make a surface
-        river.position.y = 0.1;
-        scene.add(river);
-
-        // Trees
-        const treeGroup = new THREE.Group();
-        const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 3, 8);
-        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
-        const leavesGeo = new THREE.ConeGeometry(2, 4, 8);
-        const leavesMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32 });
+        // Juice Variables
+        let cameraShake = 0;
+        let flashTimeout;
         
-        for (let i = 0; i < 80; i++) {
-            const x = (Math.random() - 0.5) * 180;
-            const z = (Math.random() - 0.5) * 180;
-            // Don't spawn trees too close to center
-            if (Math.abs(x) < 10 && Math.abs(z) < 10) continue; 
+        // Input
+        const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false };
+        let joystickVector = { x: 0, z: 0 };
+        
+        // --- Shared Materials & Geometries (For Performance) ---
+        const matPlayer = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+        const matPink = new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.5 });
+        const matGreen = new THREE.MeshStandardMaterial({ color: 0x4ade80, roughness: 0.9 });
+        const matBone = new THREE.MeshStandardMaterial({ color: 0xf3f4f6, roughness: 0.9 });
+        const matBlack = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const matProj = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+        // Zombie Shared Geometries
+        const geoZHead = new THREE.CapsuleGeometry(0.45, 0.3, 4, 16);
+        const geoZBody = new THREE.CapsuleGeometry(0.45, 0.9, 4, 16);
+        const geoZArm = new THREE.CapsuleGeometry(0.2, 0.8, 4, 16);
+        geoZArm.translate(0, -0.4, 0); // Pivot at top (shoulder)
+        const geoZLeg = new THREE.CapsuleGeometry(0.25, 0.8, 4, 16);
+        geoZLeg.translate(0, -0.4, 0); // Pivot at top (hip)
+
+        // Skeleton Shared Geometries
+        const geoSHead = new THREE.SphereGeometry(0.45, 16, 16);
+        const geoSBody = new THREE.CapsuleGeometry(0.15, 0.9, 4, 16);
+        const geoSArm = new THREE.CapsuleGeometry(0.1, 0.8, 4, 16);
+        geoSArm.translate(0, -0.4, 0);
+        const geoSLeg = new THREE.CapsuleGeometry(0.1, 0.8, 4, 16);
+        geoSLeg.translate(0, -0.4, 0);
+
+        // --- Initialization ---
+        function init() {
+            const container = document.getElementById('game-container');
             
-            const tree = new THREE.Group();
-            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-            trunk.position.y = 1.5;
-            trunk.castShadow = true;
-            trunk.receiveShadow = true;
+            clock = new THREE.Clock();
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 50, 150);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
             
-            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
-            leaves.position.y = 4;
-            leaves.castShadow = true;
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 100, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.top = 100;
+            dirLight.shadow.camera.bottom = -100;
+            dirLight.shadow.camera.left = -100;
+            dirLight.shadow.camera.right = 100;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            buildEnvironment();
+            createPlayer();
+
+            window.addEventListener('resize', onWindowResize, false);
+            setupInput();
+
+            isGameOver = false;
+            updateHealthUI();
             
-            tree.add(trunk);
-            tree.add(leaves);
-            tree.position.set(x, 0, z);
-            
-            // Random scaling
-            const scale = 0.8 + Math.random() * 0.7;
-            tree.scale.set(scale, scale, scale);
-            treeGroup.add(tree);
+            clock.start();
+            animate();
         }
-        scene.add(treeGroup);
 
-        // Flowers
-        const flowerGeo = new THREE.SphereGeometry(0.2, 8, 8);
-        const flowerColors = [0xFFC107, 0xE91E63, 0x9C27B0, 0x03A9F4];
-        for(let i=0; i<100; i++) {
-            const mat = new THREE.MeshStandardMaterial({ color: flowerColors[Math.floor(Math.random()*flowerColors.length)] });
-            const flower = new THREE.Mesh(flowerGeo, mat);
-            flower.position.set((Math.random()-0.5)*180, 0.1, (Math.random()-0.5)*180);
-            scene.add(flower);
-        }
+        // --- Environment Generation ---
+        function buildEnvironment() {
+            const groundGeo = new THREE.PlaneGeometry(500, 500);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x86efac, roughness: 1 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
 
-        // Rainbow (Parallax background)
-        const rainbowGeo = new THREE.TorusGeometry(80, 4, 16, 100, Math.PI);
-        // Fake rainbow material using vertex colors or simple texture (using basic color for simplicity)
-        const rainbowMat = new THREE.MeshBasicMaterial({ color: 0xFFB6C1, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-        const rainbow = new THREE.Mesh(rainbowGeo, rainbowMat);
-        rainbow.position.set(0, -10, -120);
-        scene.add(rainbow);
+            const riverMat = new THREE.MeshStandardMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.8 });
+            for (let i = -200; i < 200; i += 10) {
+                const rX = Math.sin(i / 30) * 40;
+                const riverGeo = new THREE.PlaneGeometry(15, 12);
+                const riverPatch = new THREE.Mesh(riverGeo, riverMat);
+                riverPatch.rotation.x = -Math.PI / 2;
+                riverPatch.position.set(rX, 0.05, i);
+                scene.add(riverPatch);
+            }
 
-        // Butterflies
-        const butterflies = [];
-        const wingGeo = new THREE.PlaneGeometry(0.4, 0.4);
-        const wingMat = new THREE.MeshBasicMaterial({ color: 0xFFEB3B, side: THREE.DoubleSide });
-        for(let i=0; i<15; i++) {
-            const bGroup = new THREE.Group();
-            const wing1 = new THREE.Mesh(wingGeo, wingMat);
-            wing1.position.x = 0.2;
-            const wing2 = new THREE.Mesh(wingGeo, wingMat);
-            wing2.position.x = -0.2;
-            bGroup.add(wing1);
-            bGroup.add(wing2);
-            bGroup.position.set((Math.random()-0.5)*100, 2 + Math.random()*3, (Math.random()-0.5)*100);
-            bGroup.userData = { wing1, wing2, speed: 0.05 + Math.random()*0.05, angle: Math.random()*Math.PI*2 };
-            scene.add(bGroup);
-            butterflies.push(bGroup);
-        }
-
-        // --- 4. CHARACTER GENERATOR (Bipedal with articulated limbs) ---
-        function createBiped(type) {
-            const group = new THREE.Group();
+            const trunkGeo = new THREE.CylinderGeometry(0.5, 0.8, 3, 8);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
+            const leavesGeo = new THREE.ConeGeometry(2.5, 5, 8);
+            const leavesMat = new THREE.MeshStandardMaterial({ color: 0x166534 });
             
-            // Bouncing group for torso + head + arms
+            for (let i = 0; i < 150; i++) {
+                const x = (Math.random() - 0.5) * 400;
+                const z = (Math.random() - 0.5) * 400;
+                if (Math.abs(x) < 15 && Math.abs(z) < 15) continue;
+
+                const tree = new THREE.Group();
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                trunk.position.y = 1.5;
+                trunk.castShadow = true;
+                trunk.receiveShadow = true;
+                const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+                leaves.position.y = 4.5;
+                leaves.castShadow = true;
+                tree.add(trunk);
+                tree.add(leaves);
+                tree.position.set(x, 0, z);
+                scene.add(tree);
+
+                const fColors = [0xef4444, 0xa855f7, 0xfb923c, 0xffffff];
+                const fMat = new THREE.MeshStandardMaterial({ color: fColors[Math.floor(Math.random() * fColors.length)] });
+                const flower = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), fMat);
+                flower.position.set(x + (Math.random()-0.5)*5, 0.2, z + (Math.random()-0.5)*5);
+                scene.add(flower);
+            }
+
+            const colors = [0xef4444, 0xf97316, 0xeab308, 0x22c55e, 0x3b82f6, 0x4f46e5, 0xa855f7];
+            for (let i = 0; i < colors.length; i++) {
+                const torusGeo = new THREE.TorusGeometry(150 - i * 3, 2.5, 16, 100, Math.PI);
+                const torusMat = new THREE.MeshBasicMaterial({ color: colors[i], side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+                const rainbowRing = new THREE.Mesh(torusGeo, torusMat);
+                rainbowRing.position.set(0, -10, -200);
+                scene.add(rainbowRing);
+            }
+
+            const bMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, side: THREE.DoubleSide });
+            const bGeo = new THREE.PlaneGeometry(0.5, 0.5);
+            for(let i=0; i<30; i++) {
+                const bfly = new THREE.Group();
+                const wing1 = new THREE.Mesh(bGeo, bMat);
+                wing1.position.x = -0.25;
+                const wing2 = new THREE.Mesh(bGeo, bMat);
+                wing2.position.x = 0.25;
+                bfly.add(wing1, wing2);
+                bfly.position.set((Math.random()-0.5)*200, 2 + Math.random()*3, (Math.random()-0.5)*200);
+                bfly.userData = { wing1, wing2, angle: Math.random() * Math.PI * 2, speed: 2 + Math.random() * 2, offset: Math.random() * 100 };
+                scene.add(bfly);
+                butterflies.push(bfly);
+            }
+        }
+
+        // --- Bipedal Character Generators ---
+        function createPlayer() {
+            playerGroup = new THREE.Group();
+            
+            // Bounce Group (Bobs up and down)
             const bounceGroup = new THREE.Group();
-            bounceGroup.position.y = 1.2; 
-            group.add(bounceGroup);
+            bounceGroup.position.y = 0.9; // Hips level
+            playerGroup.add(bounceGroup);
 
-            let bodyColor, limbColor, isBear = false;
-            if (type === 'player') {
-                bodyColor = 0xffffff; // Chiikawa white
-                limbColor = 0xffffff;
-                isBear = true;
-            } else if (type === 'zombie') {
-                bodyColor = 0x8B0000; // Red zombie
-                limbColor = 0x550000;
-            } else {
-                bodyColor = 0xDDDDDD; // Skeleton
-                limbColor = 0xAAAAAA;
-            }
+            // Torso Group (Twists left/right)
+            const torsoGroup = new THREE.Group();
+            bounceGroup.add(torsoGroup);
 
-            // Material needs to be unique if we want to flash it on damage
-            const mat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6 });
-            const limbMat = new THREE.MeshStandardMaterial({ color: limbColor, roughness: 0.6 });
+            // Body (Smooth Capsule)
+            const bodyGeo = new THREE.CapsuleGeometry(0.6, 0.4, 4, 16);
+            const body = new THREE.Mesh(bodyGeo, matPlayer);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            torsoGroup.add(body);
 
-            // Torso (Capsule)
-            const torsoGeo = new THREE.CapsuleGeometry(0.6, 0.8, 4, 16);
-            const torso = new THREE.Mesh(torsoGeo, mat);
-            torso.position.y = 0.8;
-            torso.castShadow = true;
-            bounceGroup.add(torso);
+            // Head (Chiikawa style - Big Round Sphere)
+            const head = new THREE.Mesh(new THREE.SphereGeometry(1.0, 32, 32), matPlayer);
+            head.position.y = 1.4;
+            head.castShadow = true;
+            torsoGroup.add(head);
 
-            // Details for Bear (Chiikawa style)
-            if (isBear) {
-                const earGeo = new THREE.SphereGeometry(0.25, 16, 16);
-                const earL = new THREE.Mesh(earGeo, mat);
-                earL.position.set(-0.4, 1.4, 0);
-                const earR = new THREE.Mesh(earGeo, mat);
-                earR.position.set(0.4, 1.4, 0);
-                bounceGroup.add(earL);
-                bounceGroup.add(earR);
-                
-                // Eyes & Mouth
-                const faceMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-                const eyeGeo = new THREE.SphereGeometry(0.08, 8, 8);
-                const eyeL = new THREE.Mesh(eyeGeo, faceMat);
-                eyeL.position.set(-0.25, 1.1, 0.55);
-                const eyeR = new THREE.Mesh(eyeGeo, faceMat);
-                eyeR.position.set(0.25, 1.1, 0.55);
-                bounceGroup.add(eyeL);
-                bounceGroup.add(eyeR);
+            // Ears
+            const earGeo = new THREE.SphereGeometry(0.3, 16, 16);
+            const earL = new THREE.Mesh(earGeo, matPlayer);
+            earL.position.set(-0.7, 2.1, 0);
+            const earR = new THREE.Mesh(earGeo, matPlayer);
+            earR.position.set(0.7, 2.1, 0);
+            torsoGroup.add(earL, earR);
 
-                const mouthGeo = new THREE.TorusGeometry(0.05, 0.02, 8, 8, Math.PI);
-                const mouth = new THREE.Mesh(mouthGeo, faceMat);
-                mouth.position.set(0, 0.95, 0.58);
-                mouth.rotation.x = Math.PI; // Smile
-                bounceGroup.add(mouth);
-            }
-
-            // Arms (Pivoted at top)
-            const armGeo = new THREE.CapsuleGeometry(0.2, 0.6, 4, 8);
-            armGeo.translate(0, -0.3, 0); // Move pivot to top
+            // Face (Eyes, Cheeks)
+            const eyeGeo = new THREE.SphereGeometry(0.12, 16, 16);
+            const eyeL = new THREE.Mesh(eyeGeo, matBlack);
+            eyeL.position.set(-0.35, 1.4, 0.95);
+            const eyeR = new THREE.Mesh(eyeGeo, matBlack);
+            eyeR.position.set(0.35, 1.4, 0.95);
             
-            const armL = new THREE.Mesh(armGeo, limbMat);
-            armL.position.set(-0.9, 1.2, 0);
+            const cheekGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.05, 16);
+            const cheekL = new THREE.Mesh(cheekGeo, matPink);
+            cheekL.rotation.x = Math.PI / 2;
+            cheekL.position.set(-0.6, 1.1, 0.9);
+            const cheekR = new THREE.Mesh(cheekGeo, matPink);
+            cheekR.rotation.x = Math.PI / 2;
+            cheekR.position.set(0.6, 1.1, 0.9);
+            torsoGroup.add(eyeL, eyeR, cheekL, cheekR);
+
+            // Arms (Smooth Capsules, Pivot at Top)
+            const armGeo = new THREE.CapsuleGeometry(0.25, 0.5, 4, 16);
+            armGeo.translate(0, -0.25, 0); // Translate pivot to shoulder
+            const armL = new THREE.Mesh(armGeo, matPlayer);
+            armL.position.set(-0.8, 0.8, 0);
             armL.castShadow = true;
-            
-            const armR = new THREE.Mesh(armGeo, limbMat);
-            armR.position.set(0.9, 1.2, 0);
+            const armR = new THREE.Mesh(armGeo, matPlayer);
+            armR.position.set(0.8, 0.8, 0);
             armR.castShadow = true;
-            
-            bounceGroup.add(armL);
-            bounceGroup.add(armR);
+            torsoGroup.add(armL, armR);
 
-            // Legs (Attached to main group, not bounceGroup)
-            const legGeo = new THREE.CapsuleGeometry(0.22, 0.7, 4, 8);
-            legGeo.translate(0, -0.35, 0); // Pivot at top
-            
-            const legL = new THREE.Mesh(legGeo, limbMat);
-            legL.position.set(-0.3, 1.0, 0);
+            // Legs (Smooth Capsules, Pivot at Top, attached to ROOT so they stay grounded)
+            const legGeo = new THREE.CapsuleGeometry(0.3, 0.4, 4, 16);
+            legGeo.translate(0, -0.2, 0); // Translate pivot to hip
+            const legL = new THREE.Mesh(legGeo, matPlayer);
+            legL.position.set(-0.35, 0.9, 0);
             legL.castShadow = true;
-            
-            const legR = new THREE.Mesh(legGeo, limbMat);
-            legR.position.set(0.3, 1.0, 0);
+            const legR = new THREE.Mesh(legGeo, matPlayer);
+            legR.position.set(0.35, 0.9, 0);
             legR.castShadow = true;
+            playerGroup.add(legL, legR);
 
-            group.add(legL);
-            group.add(legR);
+            scene.add(playerGroup);
 
-            group.userData = {
-                type,
-                bounceGroup, armL, armR, legL, legR,
-                speed: type === 'player' ? 0.12 : (type === 'zombie' ? 0.04 : 0.06),
-                walkCycle: Math.random() * Math.PI * 2, // Random start phase
-                hp: type === 'player' ? 100 : (type === 'zombie' ? 20 : 15),
-                maxHp: type === 'player' ? 100 : (type === 'zombie' ? 20 : 15),
-                originalMaterial: mat,
-                isHit: false
+            player = {
+                mesh: playerGroup,
+                bounceGroup: bounceGroup,
+                torsoGroup: torsoGroup,
+                limbs: { armL, armR, legL, legR },
+                speed: 15.0,
+                maxHp: 100,
+                hp: 100,
+                invulnTime: 0,
+                radius: 1.2,
+                animTime: 0,
+                nextAttackTime: 0
             };
-
-            return group;
         }
 
-        const player = createBiped('player');
-        scene.add(player);
-
-        // --- 5. GAME STATE & MECHANICS ---
-        const enemies = [];
-        const projectiles = [];
-        const gems = []; // EXP gems
-        let playerEXP = 0;
-        let playerLevel = 1;
-        let expToNext = 10;
-        let lastAttackTime = 0;
-        const attackCooldown = 1.0; // Seconds
-
-        // Juice State
-        let shakeIntensity = 0;
-        let shakeTime = 0;
-
-        function triggerJuiceShake(intensity, duration) {
-            shakeIntensity = intensity;
-            shakeTime = duration;
-        }
-
-        function triggerJuiceFlash(colorHex, opacity) {
-            const flash = document.getElementById('flash-overlay');
-            flash.style.backgroundColor = colorHex;
-            flash.style.opacity = opacity;
-            setTimeout(() => { flash.style.opacity = '0'; }, 100);
-        }
-
-        function flashCharacter(charGroup, colorHex) {
-            if(charGroup.userData.isHit) return;
-            charGroup.userData.isHit = true;
-            
-            const flashMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.5 });
-            const origMats = [];
-            
-            charGroup.traverse((child) => {
-                if (child.isMesh && child.material) {
-                    origMats.push({ mesh: child, mat: child.material });
-                    child.material = flashMat;
-                }
-            });
-
-            setTimeout(() => {
-                origMats.forEach(item => { item.mesh.material = item.mat; });
-                charGroup.userData.isHit = false;
-            }, 150);
-        }
-
-        // --- 6. CONTROLS (Virtual Joystick) ---
-        const joystickZone = document.getElementById('joystick-zone');
-        const joystickBg = document.getElementById('joystick-bg');
-        const joystickKnob = document.getElementById('joystick-knob');
-        
-        let isDragging = false;
-        let joystickCenter = { x: 0, y: 0 };
-        let moveVector = new THREE.Vector3(0, 0, 0);
-
-        function handleTouchStart(e) {
-            e.preventDefault();
-            const touch = e.changedTouches ? e.changedTouches[0] : e;
-            isDragging = true;
-            joystickCenter = { x: touch.clientX, y: touch.clientY };
-            
-            joystickBg.style.display = 'block';
-            joystickBg.style.left = touch.clientX + 'px';
-            joystickBg.style.top = touch.clientY + 'px';
-            joystickKnob.style.transform = `translate(-50%, -50%)`;
-            moveVector.set(0,0,0);
-        }
-
-        function handleTouchMove(e) {
-            if (!isDragging) return;
-            e.preventDefault();
-            const touch = e.changedTouches ? e.changedTouches[0] : e;
-            
-            const deltaX = touch.clientX - joystickCenter.x;
-            const deltaY = touch.clientY - joystickCenter.y;
-            const distance = Math.min(Math.sqrt(deltaX*deltaX + deltaY*deltaY), 50);
-            const angle = Math.atan2(deltaY, deltaX);
-            
-            const knobX = Math.cos(angle) * distance;
-            const knobY = Math.sin(angle) * distance;
-            
-            joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-            
-            // Map 2D screen input to 3D XZ movement
-            // Up on screen (-Y) = -Z in 3D
-            moveVector.set(deltaX, 0, deltaY).normalize();
-        }
-
-        function handleTouchEnd(e) {
-            e.preventDefault();
-            isDragging = false;
-            joystickBg.style.display = 'none';
-            moveVector.set(0, 0, 0);
-        }
-
-        joystickZone.addEventListener('mousedown', handleTouchStart);
-        document.addEventListener('mousemove', handleTouchMove);
-        document.addEventListener('mouseup', handleTouchEnd);
-        
-        joystickZone.addEventListener('touchstart', handleTouchStart, {passive: false});
-        joystickZone.addEventListener('touchmove', handleTouchMove, {passive: false});
-        joystickZone.addEventListener('touchend', handleTouchEnd, {passive: false});
-
-        // Keyboard fallback
-        const keys = { w:false, a:false, s:false, d:false };
-        window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
-        window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
-
-        // --- 7. ANIMATION LOGIC ---
-        function animateCharacter(char, isMoving) {
-            const u = char.userData;
-            if (isMoving) {
-                u.walkCycle += 0.2;
-                // Swing limbs
-                u.legL.rotation.x = Math.sin(u.walkCycle) * 0.8;
-                u.legR.rotation.x = Math.sin(u.walkCycle + Math.PI) * 0.8;
-                u.armL.rotation.x = Math.sin(u.walkCycle + Math.PI) * 0.5;
-                u.armR.rotation.x = Math.sin(u.walkCycle) * 0.5;
-                // Bob body
-                u.bounceGroup.position.y = 1.2 + Math.abs(Math.sin(u.walkCycle)) * 0.2;
-                // Twist torso slightly
-                u.bounceGroup.rotation.y = Math.sin(u.walkCycle) * 0.1;
-            } else {
-                // Return to idle
-                u.legL.rotation.x = THREE.MathUtils.lerp(u.legL.rotation.x, 0, 0.1);
-                u.legR.rotation.x = THREE.MathUtils.lerp(u.legR.rotation.x, 0, 0.1);
-                u.armL.rotation.x = THREE.MathUtils.lerp(u.armL.rotation.x, 0, 0.1);
-                u.armR.rotation.x = THREE.MathUtils.lerp(u.armR.rotation.x, 0, 0.1);
-                u.bounceGroup.position.y = THREE.MathUtils.lerp(u.bounceGroup.position.y, 1.2, 0.1);
-                u.bounceGroup.rotation.y = THREE.MathUtils.lerp(u.bounceGroup.rotation.y, 0, 0.1);
-            }
-        }
-
-        // --- 8. COMBAT & SPAWNING ---
         function spawnEnemy() {
-            if(enemies.length > 30) return; // Cap enemies
-            
-            const type = Math.random() > 0.3 ? 'zombie' : 'skeleton';
-            const enemy = createBiped(type);
-            
-            // Spawn in a circle outside camera view
+            const spawnDist = 60;
             const angle = Math.random() * Math.PI * 2;
-            const radius = 30;
-            enemy.position.set(
-                player.position.x + Math.cos(angle) * radius,
-                0,
-                player.position.z + Math.sin(angle) * radius
-            );
+            const x = player.mesh.position.x + Math.cos(angle) * spawnDist;
+            const z = player.mesh.position.z + Math.sin(angle) * spawnDist;
+
+            const isZombie = Math.random() > 0.5;
+            const enemyGroup = new THREE.Group();
             
-            scene.add(enemy);
-            enemies.push(enemy);
-        }
-
-        setInterval(spawnEnemy, 1500); // Spawn every 1.5s
-
-        function spawnEXP(pos) {
-            const gemGeo = new THREE.OctahedronGeometry(0.3);
-            const gemMat = new THREE.MeshStandardMaterial({ color: 0x00FF00, emissive: 0x005500, metalness: 0.8, roughness: 0.2 });
-            const gem = new THREE.Mesh(gemGeo, gemMat);
-            gem.position.copy(pos);
-            gem.position.y = 0.5;
-            scene.add(gem);
-            gems.push(gem);
-        }
-
-        function fireProjectile() {
-            if (enemies.length === 0) return;
+            const bounceGroup = new THREE.Group();
+            bounceGroup.position.y = 0.8; // Hips level
+            enemyGroup.add(bounceGroup);
             
-            // Find nearest enemy
-            let nearest = null;
-            let minDist = Infinity;
-            for(const e of enemies) {
-                const dist = player.position.distanceTo(e.position);
-                if(dist < minDist) {
-                    minDist = dist;
-                    nearest = e;
-                }
+            const torsoGroup = new THREE.Group();
+            bounceGroup.add(torsoGroup);
+            
+            const limbs = {};
+
+            if (isZombie) {
+                const body = new THREE.Mesh(geoZBody, matGreen);
+                body.position.y = 0.6;
+                body.castShadow = true;
+                
+                const head = new THREE.Mesh(geoZHead, matGreen);
+                head.position.y = 1.3;
+                head.castShadow = true;
+                torsoGroup.add(body, head);
+                
+                limbs.armL = new THREE.Mesh(geoZArm, matGreen);
+                limbs.armL.position.set(-0.65, 0.9, 0);
+                limbs.armL.rotation.x = -Math.PI / 2; // Zombie arms forward
+                limbs.armL.castShadow = true;
+                
+                limbs.armR = new THREE.Mesh(geoZArm, matGreen);
+                limbs.armR.position.set(0.65, 0.9, 0);
+                limbs.armR.rotation.x = -Math.PI / 2;
+                limbs.armR.castShadow = true;
+                torsoGroup.add(limbs.armL, limbs.armR);
+
+                limbs.legL = new THREE.Mesh(geoZLeg, matGreen);
+                limbs.legL.position.set(-0.3, 0.8, 0);
+                limbs.legL.castShadow = true;
+                
+                limbs.legR = new THREE.Mesh(geoZLeg, matGreen);
+                limbs.legR.position.set(0.3, 0.8, 0);
+                limbs.legR.castShadow = true;
+                enemyGroup.add(limbs.legL, limbs.legR);
+                
+            } else {
+                // Skeleton
+                const body = new THREE.Mesh(geoSBody, matBone);
+                body.position.y = 0.6;
+                body.castShadow = true;
+                
+                const head = new THREE.Mesh(geoSHead, matBone);
+                head.position.y = 1.3;
+                head.castShadow = true;
+                
+                const socketGeo = new THREE.BoxGeometry(0.15, 0.15, 0.1);
+                const sockL = new THREE.Mesh(socketGeo, matBlack);
+                sockL.position.set(-0.15, 1.35, 0.42);
+                const sockR = new THREE.Mesh(socketGeo, matBlack);
+                sockR.position.set(0.15, 1.35, 0.42);
+                torsoGroup.add(body, head, sockL, sockR);
+
+                limbs.armL = new THREE.Mesh(geoSArm, matBone);
+                limbs.armL.position.set(-0.35, 0.9, 0);
+                limbs.armL.castShadow = true;
+                
+                limbs.armR = new THREE.Mesh(geoSArm, matBone);
+                limbs.armR.position.set(0.35, 0.9, 0);
+                limbs.armR.castShadow = true;
+                torsoGroup.add(limbs.armL, limbs.armR);
+
+                limbs.legL = new THREE.Mesh(geoSLeg, matBone);
+                limbs.legL.position.set(-0.2, 0.8, 0);
+                limbs.legL.castShadow = true;
+                
+                limbs.legR = new THREE.Mesh(geoSLeg, matBone);
+                limbs.legR.position.set(0.2, 0.8, 0);
+                limbs.legR.castShadow = true;
+                enemyGroup.add(limbs.legL, limbs.legR);
             }
 
-            if (!nearest || minDist > 25) return; // Out of range
+            enemyGroup.position.set(x, 0, z);
+            scene.add(enemyGroup);
 
-            // Create Projectile (Math symbol/sphere)
-            const projGeo = new THREE.SphereGeometry(0.4, 8, 8);
-            const projMat = new THREE.MeshBasicMaterial({ color: 0x00FFaa }); // Bright cyan/green
-            const proj = new THREE.Mesh(projGeo, projMat);
-            
-            proj.position.copy(player.position);
-            proj.position.y = 1.5;
-            
-            const dir = new THREE.Vector3().subVectors(nearest.position, proj.position).normalize();
-            proj.userData = { velocity: dir.multiplyScalar(0.4), life: 100 };
-            
-            scene.add(proj);
-            projectiles.push(proj);
-
-            // Juice: Attack feel
-            triggerJuiceShake(0.1, 5); // Light shake
-            triggerJuiceFlash('#00FFaa', 0.2); // Green flash
+            enemies.push({
+                mesh: enemyGroup,
+                bounceGroup: bounceGroup,
+                torsoGroup: torsoGroup,
+                limbs: limbs,
+                type: isZombie ? 'zombie' : 'skeleton',
+                speed: isZombie ? (2.0 + Math.random() * 1.5) : (5.0 + Math.random() * 2.0),
+                radius: 0.8,
+                damage: 10,
+                animTime: Math.random() * Math.PI * 2
+            });
         }
 
-        // --- 9. MAIN LOOP ---
-        const clock = new THREE.Clock();
-        
+        // --- Mechanics ---
+        function triggerFlash(type) {
+            const el = document.getElementById('screen-flash');
+            el.className = type === 'hit' ? 'flash-red' : 'flash-green';
+            el.style.opacity = '1';
+            clearTimeout(flashTimeout);
+            flashTimeout = setTimeout(() => {
+                el.style.opacity = '0';
+            }, 100);
+        }
+
+        function autoAttack(currentTime) {
+            if (currentTime > player.nextAttackTime && enemies.length > 0) {
+                let closest = null;
+                let minDist = Infinity;
+                
+                for (const e of enemies) {
+                    const dist = player.mesh.position.distanceTo(e.mesh.position);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closest = e;
+                    }
+                }
+
+                if (closest) {
+                    const pGeo = new THREE.SphereGeometry(0.4, 16, 16);
+                    const pMesh = new THREE.Mesh(pGeo, matProj);
+                    pMesh.position.copy(player.mesh.position);
+                    pMesh.position.y = 1.5;
+                    scene.add(pMesh);
+
+                    const dir = new THREE.Vector3().subVectors(closest.mesh.position, pMesh.position).normalize();
+                    
+                    projectiles.push({
+                        mesh: pMesh,
+                        dir: dir,
+                        speed: 30.0,
+                        radius: 0.4,
+                        life: 2.0 
+                    });
+                    
+                    player.nextAttackTime = currentTime + 1.0; // 1 attack per second
+                    
+                    // Attack Juice Effect
+                    cameraShake = 0.5; // Light shake
+                    triggerFlash('attack');
+                }
+            }
+        }
+
+        function takeDamage(amount, currentTime) {
+            if (currentTime > player.invulnTime) {
+                player.hp -= amount;
+                player.invulnTime = currentTime + 0.5; // 0.5s i-frames
+                updateHealthUI();
+                
+                // Damage Juice Effect
+                cameraShake = 3.0; // Heavy shake
+                triggerFlash('hit');
+                
+                // Emissive Flash for Player ONLY
+                matPlayer.emissive.setHex(0xff0000);
+                setTimeout(() => {
+                    matPlayer.emissive.setHex(0x000000);
+                }, 150);
+
+                if (player.hp <= 0) {
+                    isGameOver = true;
+                    document.getElementById('game-over-screen').classList.remove('hidden');
+                }
+            }
+        }
+
+        function updateHealthUI() {
+            const bar = document.getElementById('health-bar');
+            const percent = Math.max(0, (player.hp / player.maxHp) * 100);
+            bar.style.width = percent + '%';
+            if (percent < 30) bar.style.backgroundColor = '#ef4444';
+            else bar.style.backgroundColor = '#22c55e';
+        }
+
+        // --- Input Handling ---
+        function setupInput() {
+            window.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+            window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+            const joyArea = document.getElementById('joystick-area');
+            const joyBase = document.getElementById('joystick-base');
+            const joyKnob = document.getElementById('joystick-knob');
+            let joyActive = false;
+            let joyCenter = { x: 0, y: 0 };
+            const maxRadius = 50;
+
+            joyArea.addEventListener('touchstart', (e) => {
+                if(isGameOver) return;
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                joyActive = true;
+                joyCenter = { x: touch.clientX, y: touch.clientY };
+                
+                joyBase.style.display = 'block';
+                joyBase.style.left = touch.clientX + 'px';
+                joyBase.style.top = touch.clientY + 'px';
+                joyKnob.style.transform = `translate(-50%, -50%)`;
+                
+                joystickVector = { x: 0, z: 0 };
+            }, { passive: false });
+
+            joyArea.addEventListener('touchmove', (e) => {
+                if (!joyActive) return;
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                
+                let dx = touch.clientX - joyCenter.x;
+                let dy = touch.clientY - joyCenter.y;
+                let dist = Math.hypot(dx, dy);
+                
+                if (dist > maxRadius) {
+                    dx = (dx / dist) * maxRadius;
+                    dy = (dy / dist) * maxRadius;
+                    dist = maxRadius;
+                }
+                
+                joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                joystickVector.x = dx / maxRadius;
+                joystickVector.z = dy / maxRadius;
+            }, { passive: false });
+
+            const endTouch = () => {
+                joyActive = false;
+                joyBase.style.display = 'none';
+                joystickVector = { x: 0, z: 0 };
+            };
+            joyArea.addEventListener('touchend', endTouch);
+            joyArea.addEventListener('touchcancel', endTouch);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Main Loop ---
         function animate() {
-            requestAnimationFrame(animate);
-            const delta = clock.getDelta();
+            if (!isGameOver) {
+                requestAnimationFrame(animate);
+                updateLogic();
+                renderer.render(scene, camera);
+            }
+        }
+
+        function updateLogic() {
+            const delta = Math.min(clock.getDelta(), 0.1);
             const time = clock.getElapsedTime();
 
-            // Keyboard input mapping
-            if(!isDragging) {
-                moveVector.set(0,0,0);
-                if(keys.w) moveVector.z -= 1;
-                if(keys.s) moveVector.z += 1;
-                if(keys.a) moveVector.x -= 1;
-                if(keys.d) moveVector.x += 1;
-                moveVector.normalize();
+            // 1. Update Player
+            let dx = 0, dz = 0;
+            if (keys.w || keys.ArrowUp) dz -= 1;
+            if (keys.s || keys.ArrowDown) dz += 1;
+            if (keys.a || keys.ArrowLeft) dx -= 1;
+            if (keys.d || keys.ArrowRight) dx += 1;
+
+            if (dx !== 0 || dz !== 0) {
+                const len = Math.hypot(dx, dz);
+                dx /= len; dz /= len;
             }
 
-            // Player Movement
-            const isMoving = moveVector.lengthSq() > 0;
+            if (joystickVector.x !== 0 || joystickVector.z !== 0) {
+                dx = joystickVector.x;
+                dz = joystickVector.z;
+            }
+
+            const isMoving = dx !== 0 || dz !== 0;
+
+            player.mesh.position.x += dx * player.speed * delta;
+            player.mesh.position.z += dz * player.speed * delta;
+
             if (isMoving) {
-                player.position.addScaledVector(moveVector, player.userData.speed);
-                // Rotate player to face movement direction
-                const angle = Math.atan2(moveVector.x, moveVector.z);
-                player.rotation.y = angle;
-            }
-            animateCharacter(player, isMoving);
-
-            // Camera follow (Smooth)
-            cameraRig.position.lerp(player.position, 0.1);
-
-            // Apply Camera Shake
-            if (shakeTime > 0) {
-                camera.position.x = (Math.random() - 0.5) * shakeIntensity;
-                camera.position.y = 15 + (Math.random() - 0.5) * shakeIntensity;
-                shakeTime--;
+                const targetAngle = Math.atan2(dx, dz);
+                const currentAngle = player.mesh.rotation.y;
+                let diff = targetAngle - currentAngle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                player.mesh.rotation.y += diff * 10 * delta;
+                
+                // Procedural Walk Animation (Player)
+                player.animTime += delta * 15;
+                const pt = player.animTime;
+                player.limbs.legL.rotation.x = Math.sin(pt) * 0.8;
+                player.limbs.legR.rotation.x = Math.sin(pt + Math.PI) * 0.8; 
+                player.limbs.armL.rotation.x = Math.sin(pt + Math.PI) * 0.6;
+                player.limbs.armR.rotation.x = Math.sin(pt) * 0.6;
+                
+                // Bobbing & Twisting
+                player.bounceGroup.position.y = 0.9 + Math.abs(Math.sin(pt * 2)) * 0.15;
+                player.torsoGroup.rotation.y = Math.sin(pt) * 0.15;
             } else {
-                camera.position.set(0, 15, 20); // Reset local camera pos
+                // Idle breathing
+                player.animTime += delta * 3;
+                const pt = player.animTime;
+                
+                // Lerp limbs back to neutral
+                player.limbs.legL.rotation.x = THREE.MathUtils.lerp(player.limbs.legL.rotation.x, 0, 0.1);
+                player.limbs.legR.rotation.x = THREE.MathUtils.lerp(player.limbs.legR.rotation.x, 0, 0.1);
+                
+                player.limbs.armL.rotation.x = Math.sin(pt) * 0.05;
+                player.limbs.armR.rotation.x = Math.sin(pt + Math.PI) * 0.05;
+                
+                player.bounceGroup.position.y = 0.9 + Math.sin(pt) * 0.05;
+                player.torsoGroup.rotation.y = 0;
             }
 
-            // Auto Attack
-            if (time - lastAttackTime > attackCooldown) {
-                fireProjectile();
-                lastAttackTime = time;
+            // 2. Camera Follow & Shake
+            camera.position.lerp(new THREE.Vector3(
+                player.mesh.position.x,
+                player.mesh.position.y + 25,
+                player.mesh.position.z + 20
+            ), 0.1);
+            
+            // Apply Camera Shake
+            if (cameraShake > 0) {
+                camera.position.x += (Math.random() - 0.5) * cameraShake;
+                camera.position.y += (Math.random() - 0.5) * cameraShake;
+                camera.position.z += (Math.random() - 0.5) * cameraShake;
+                cameraShake *= 0.85; // Decay rate
+                if (cameraShake < 0.01) cameraShake = 0;
             }
 
-            // Update Projectiles
+            camera.lookAt(player.mesh.position);
+
+            // 3. Enemies
+            // Spawn logic (~every second)
+            if (Math.random() < delta * 1.5) spawnEnemy();
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                
+                const dir = new THREE.Vector3().subVectors(player.mesh.position, e.mesh.position);
+                dir.y = 0;
+                if (dir.length() > 0) dir.normalize();
+                
+                e.mesh.position.addScaledVector(dir, e.speed * delta);
+                e.mesh.lookAt(player.mesh.position.x, e.mesh.position.y, player.mesh.position.z);
+
+                // Enemy Walk Cycle
+                e.animTime += delta * (e.speed * 3.0);
+                const et = e.animTime;
+                
+                e.limbs.legL.rotation.x = Math.sin(et) * 0.8;
+                e.limbs.legR.rotation.x = Math.sin(et + Math.PI) * 0.8;
+                
+                if (e.type === 'zombie') {
+                    // Zombie slightly wobbles arms
+                    e.limbs.armL.rotation.z = Math.sin(et * 0.5) * 0.1;
+                    e.limbs.armR.rotation.z = Math.cos(et * 0.5) * 0.1;
+                    e.torsoGroup.rotation.y = Math.sin(et * 0.5) * 0.2; // heavy drag
+                    e.bounceGroup.position.y = 0.8 + Math.abs(Math.sin(et * 2)) * 0.1;
+                } else if (e.type === 'skeleton') {
+                    // Skeleton full swing
+                    e.limbs.armL.rotation.x = Math.sin(et + Math.PI) * 0.8;
+                    e.limbs.armR.rotation.x = Math.sin(et) * 0.8;
+                    e.torsoGroup.rotation.y = Math.sin(et) * 0.2;
+                    e.bounceGroup.position.y = 0.8 + Math.abs(Math.sin(et * 2)) * 0.2;
+                }
+
+                // Check Player Collision
+                const distToPlayer = e.mesh.position.distanceTo(player.mesh.position);
+                if (distToPlayer < e.radius + player.radius) {
+                    takeDamage(e.damage, time);
+                    e.mesh.position.addScaledVector(dir, -2.0); // Knockback
+                }
+            }
+
+            // 4. Projectiles
+            autoAttack(time);
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
-                p.position.add(p.userData.velocity);
-                p.userData.life--;
-                
+                p.mesh.position.addScaledVector(p.dir, p.speed * delta);
+                p.life -= delta;
+
                 let hit = false;
-                // Check collision with enemies
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const e = enemies[j];
-                    if (p.position.distanceTo(e.position) < 1.2) {
-                        // Hit!
-                        e.userData.hp -= 10;
-                        flashCharacter(e, 0xFFFFFF); // White flash on hit
-                        
-                        // Pushback
-                        const pushDir = new THREE.Vector3().subVectors(e.position, p.position).normalize();
-                        e.position.addScaledVector(pushDir, 1.5);
-
+                    if (p.mesh.position.distanceTo(e.mesh.position) < p.radius + e.radius) {
+                        scene.remove(e.mesh);
+                        enemies.splice(j, 1);
                         hit = true;
-                        
-                        if (e.userData.hp <= 0) {
-                            spawnEXP(e.position);
-                            scene.remove(e);
-                            enemies.splice(j, 1);
-                        }
                         break;
                     }
                 }
 
-                if (hit || p.userData.life <= 0) {
-                    scene.remove(p);
+                if (hit || p.life <= 0) {
+                    scene.remove(p.mesh);
+                    // Dispose projectile unique geometry to prevent memory leak
+                    p.mesh.geometry.dispose(); 
                     projectiles.splice(i, 1);
                 }
             }
 
-            // Update Enemies
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                const e = enemies[i];
-                // Move towards player
-                const dir = new THREE.Vector3().subVectors(player.position, e.position);
-                dir.y = 0; 
-                if (dir.lengthSq() > 0.1) {
-                    dir.normalize();
-                    e.position.addScaledVector(dir, e.userData.speed);
-                    e.rotation.y = Math.atan2(dir.x, dir.z);
-                    animateCharacter(e, true);
-                }
-
-                // Check collision with player
-                if (e.position.distanceTo(player.position) < 1.2) {
-                    // Player takes damage
-                    player.userData.hp -= 1; // Continuous damage if touching
-                    updateHPBar();
-                    flashCharacter(player, 0xFF0000);
-                    triggerJuiceShake(0.5, 10); // Heavy shake
-                    triggerJuiceFlash('#FF0000', 0.4); // Red flash
-                    
-                    // Pushback enemy slightly
-                    e.position.addScaledVector(dir, -0.5);
-
-                    if (player.userData.hp <= 0) {
-                        alert("Game Over! (Refresh to restart)");
-                        player.userData.hp = player.userData.maxHp;
-                    }
-                }
-            }
-
-            // Update EXP Gems
-            for (let i = gems.length - 1; i >= 0; i--) {
-                const gem = gems[i];
-                gem.rotation.y += 0.05;
-                gem.rotation.x += 0.05;
-
-                // Magnet effect if close
-                const dist = gem.position.distanceTo(player.position);
-                if (dist < 4) {
-                    const dir = new THREE.Vector3().subVectors(player.position, gem.position).normalize();
-                    gem.position.addScaledVector(dir, 0.2); // Fly to player
-                }
-
-                // Collect
-                if (dist < 1.0) {
-                    playerEXP += 2;
-                    scene.remove(gem);
-                    gems.splice(i, 1);
-                    updateEXPBar();
-                }
-            }
-
-            // Animate Butterflies
+            // 5. Butterflies Animation
             butterflies.forEach(b => {
-                b.position.x += Math.cos(b.userData.angle) * b.userData.speed;
-                b.position.z += Math.sin(b.userData.angle) * b.userData.speed;
-                b.position.y += Math.sin(time * 5) * 0.01;
-                if(Math.random() < 0.01) b.userData.angle += (Math.random()-0.5)*2;
+                b.userData.angle += (Math.random() - 0.5) * 2.0 * delta;
+                b.position.x += Math.cos(b.userData.angle) * b.userData.speed * delta;
+                b.position.z += Math.sin(b.userData.angle) * b.userData.speed * delta;
+                b.position.y += Math.sin(time * 2 + b.userData.offset) * 0.05;
                 
-                // Flap wings
-                b.userData.wing1.rotation.y = Math.sin(time * 20) * 0.8;
-                b.userData.wing2.rotation.y = -Math.sin(time * 20) * 0.8;
+                const flap = Math.sin(time * 15 + b.userData.offset) * 0.8;
+                b.userData.wing1.rotation.z = flap;
+                b.userData.wing2.rotation.z = -flap;
+                b.rotation.y = -b.userData.angle;
             });
-
-            renderer.render(scene, cameraRig);
         }
 
-        function updateHPBar() {
-            const pct = Math.max(0, (player.userData.hp / player.userData.maxHp) * 100);
-            document.getElementById('hp-bar-fill').style.width = pct + '%';
-        }
+        // Global export for HTML button
+        window.restartGame = function() {
+            enemies.forEach(e => scene.remove(e.mesh));
+            projectiles.forEach(p => {
+                scene.remove(p.mesh);
+                p.mesh.geometry.dispose();
+            });
+            enemies = [];
+            projectiles = [];
+            
+            player.mesh.position.set(0, 0, 0);
+            player.hp = player.maxHp;
+            isGameOver = false;
+            document.getElementById('game-over-screen').classList.add('hidden');
+            updateHealthUI();
+            
+            clock.start();
+            animate();
+        };
 
-        function updateEXPBar() {
-            if (playerEXP >= expToNext) {
-                playerEXP -= expToNext;
-                playerLevel++;
-                expToNext = Math.floor(expToNext * 1.5); // Increase requirement
-                document.getElementById('level-text').innerText = 'Lv. ' + playerLevel;
-                // Level up Juice
-                triggerJuiceFlash('#FFFF00', 0.5);
-                triggerJuiceShake(0.3, 15);
-            }
-            const pct = (playerEXP / expToNext) * 100;
-            document.getElementById('exp-bar-fill').style.width = pct + '%';
-        }
+        // Start App
+        init();
 
-        // Handle Resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // Start Loop
-        animate();
     </script>
 </body>
 </html>
