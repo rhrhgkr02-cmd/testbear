@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>MATH Survivor 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; user-select: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        
+        /* Health & EXP Bars */
+        #hp-bar-bg { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 400px; height: 24px; background: rgba(0,0,0,0.6); border: 2px solid #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        #hp-bar-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #ff4444, #ff6b6b); transition: width 0.2s ease-out; }
+        
+        #exp-bar-bg { position: absolute; top: 55px; left: 50%; transform: translateX(-50%); width: 70%; max-width: 350px; height: 12px; background: rgba(0,0,0,0.6); border: 1.5px solid #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        #exp-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #44ff44, #88ff88); transition: width 0.3s ease-out; }
+        
+        #level-text { position: absolute; top: 75px; left: 50%; transform: translateX(-50%); color: white; font-weight: 900; font-size: 1.2rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); letter-spacing: 1px; }
+
+        /* Joystick */
+        #joystick-zone { position: absolute; bottom: 0; left: 0; width: 100%; height: 50%; pointer-events: auto; z-index: 20; }
+        #joystick-bg { position: absolute; width: 130px; height: 130px; background: rgba(255,255,255,0.15); border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); transform: translate(-50%, -50%); display: none; box-shadow: inset 0 0 20px rgba(255,255,255,0.2); backdrop-filter: blur(4px); }
+        #joystick-knob { position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.8); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%); box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        
+        /* Juice Effects */
+        #flash-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; transition: opacity 0.05s ease-out; z-index: 5; mix-blend-mode: hard-light; }
+        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; background: radial-gradient(circle, transparent 60%, rgba(0,0,0,0.4) 100%); z-index: 4; }
+    </style>
+</head>
+<body>
+    <div id="flash-overlay"></div>
+    <div id="vignette"></div>
+    <div id="ui-layer">
+        <div id="hp-bar-bg"><div id="hp-bar-fill"></div></div>
+        <div id="exp-bar-bg"><div id="exp-bar-fill"></div></div>
+        <div id="level-text">Lv. 1</div>
+    </div>
+    <div id="joystick-zone">
+        <div id="joystick-bg"><div id="joystick-knob"></div></div>
+    </div>
+
+    <!-- Import Three.js as ES module -->
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+
+        // --- 1. SET UP SCENE, CAMERA, RENDERER ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Sky blue
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.015);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // Camera container for shake effect
+        const cameraRig = new THREE.Group();
+        cameraRig.add(camera);
+        scene.add(cameraRig);
+        camera.position.set(0, 15, 20);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 40, 20);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -30;
+        dirLight.shadow.camera.right = 30;
+        dirLight.shadow.camera.top = 30;
+        dirLight.shadow.camera.bottom = -30;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        // --- 3. ENVIRONMENT (Forest, River, Rainbow) ---
+        // Ground
+        const groundGeo = new THREE.PlaneGeometry(200, 200);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x4CAF50, roughness: 0.8 }); // Green grass
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Winding River
+        const riverPath = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(-50, 0.1, -80),
+            new THREE.Vector3(-20, 0.1, -40),
+            new THREE.Vector3(10, 0.1, 0),
+            new THREE.Vector3(-10, 0.1, 40),
+            new THREE.Vector3(30, 0.1, 80)
+        ]);
+        const tubeGeo = new THREE.TubeGeometry(riverPath, 64, 4, 8, false);
+        const riverMat = new THREE.MeshStandardMaterial({ color: 0x42A5F5, transparent: true, opacity: 0.8, roughness: 0.1 });
+        const river = new THREE.Mesh(tubeGeo, riverMat);
+        river.scale.y = 0.05; // Flatten tube to make a surface
+        river.position.y = 0.1;
+        scene.add(river);
+
+        // Trees
+        const treeGroup = new THREE.Group();
+        const trunkGeo = new THREE.CylinderGeometry(0.5, 0.7, 3, 8);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5D4037 });
+        const leavesGeo = new THREE.ConeGeometry(2, 4, 8);
+        const leavesMat = new THREE.MeshStandardMaterial({ color: 0x2E7D32 });
+        
+        for (let i = 0; i < 80; i++) {
+            const x = (Math.random() - 0.5) * 180;
+            const z = (Math.random() - 0.5) * 180;
+            // Don't spawn trees too close to center
+            if (Math.abs(x) < 10 && Math.abs(z) < 10) continue; 
+            
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 1.5;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.y = 4;
+            leaves.castShadow = true;
+            
+            tree.add(trunk);
+            tree.add(leaves);
+            tree.position.set(x, 0, z);
+            
+            // Random scaling
+            const scale = 0.8 + Math.random() * 0.7;
+            tree.scale.set(scale, scale, scale);
+            treeGroup.add(tree);
+        }
+        scene.add(treeGroup);
+
+        // Flowers
+        const flowerGeo = new THREE.SphereGeometry(0.2, 8, 8);
+        const flowerColors = [0xFFC107, 0xE91E63, 0x9C27B0, 0x03A9F4];
+        for(let i=0; i<100; i++) {
+            const mat = new THREE.MeshStandardMaterial({ color: flowerColors[Math.floor(Math.random()*flowerColors.length)] });
+            const flower = new THREE.Mesh(flowerGeo, mat);
+            flower.position.set((Math.random()-0.5)*180, 0.1, (Math.random()-0.5)*180);
+            scene.add(flower);
+        }
+
+        // Rainbow (Parallax background)
+        const rainbowGeo = new THREE.TorusGeometry(80, 4, 16, 100, Math.PI);
+        // Fake rainbow material using vertex colors or simple texture (using basic color for simplicity)
+        const rainbowMat = new THREE.MeshBasicMaterial({ color: 0xFFB6C1, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+        const rainbow = new THREE.Mesh(rainbowGeo, rainbowMat);
+        rainbow.position.set(0, -10, -120);
+        scene.add(rainbow);
+
+        // Butterflies
+        const butterflies = [];
+        const wingGeo = new THREE.PlaneGeometry(0.4, 0.4);
+        const wingMat = new THREE.MeshBasicMaterial({ color: 0xFFEB3B, side: THREE.DoubleSide });
+        for(let i=0; i<15; i++) {
+            const bGroup = new THREE.Group();
+            const wing1 = new THREE.Mesh(wingGeo, wingMat);
+            wing1.position.x = 0.2;
+            const wing2 = new THREE.Mesh(wingGeo, wingMat);
+            wing2.position.x = -0.2;
+            bGroup.add(wing1);
+            bGroup.add(wing2);
+            bGroup.position.set((Math.random()-0.5)*100, 2 + Math.random()*3, (Math.random()-0.5)*100);
+            bGroup.userData = { wing1, wing2, speed: 0.05 + Math.random()*0.05, angle: Math.random()*Math.PI*2 };
+            scene.add(bGroup);
+            butterflies.push(bGroup);
+        }
+
+        // --- 4. CHARACTER GENERATOR (Bipedal with articulated limbs) ---
+        function createBiped(type) {
+            const group = new THREE.Group();
+            
+            // Bouncing group for torso + head + arms
+            const bounceGroup = new THREE.Group();
+            bounceGroup.position.y = 1.2; 
+            group.add(bounceGroup);
+
+            let bodyColor, limbColor, isBear = false;
+            if (type === 'player') {
+                bodyColor = 0xffffff; // Chiikawa white
+                limbColor = 0xffffff;
+                isBear = true;
+            } else if (type === 'zombie') {
+                bodyColor = 0x8B0000; // Red zombie
+                limbColor = 0x550000;
+            } else {
+                bodyColor = 0xDDDDDD; // Skeleton
+                limbColor = 0xAAAAAA;
+            }
+
+            // Material needs to be unique if we want to flash it on damage
+            const mat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6 });
+            const limbMat = new THREE.MeshStandardMaterial({ color: limbColor, roughness: 0.6 });
+
+            // Torso (Capsule)
+            const torsoGeo = new THREE.CapsuleGeometry(0.6, 0.8, 4, 16);
+            const torso = new THREE.Mesh(torsoGeo, mat);
+            torso.position.y = 0.8;
+            torso.castShadow = true;
+            bounceGroup.add(torso);
+
+            // Details for Bear (Chiikawa style)
+            if (isBear) {
+                const earGeo = new THREE.SphereGeometry(0.25, 16, 16);
+                const earL = new THREE.Mesh(earGeo, mat);
+                earL.position.set(-0.4, 1.4, 0);
+                const earR = new THREE.Mesh(earGeo, mat);
+                earR.position.set(0.4, 1.4, 0);
+                bounceGroup.add(earL);
+                bounceGroup.add(earR);
+                
+                // Eyes & Mouth
+                const faceMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+                const eyeGeo = new THREE.SphereGeometry(0.08, 8, 8);
+                const eyeL = new THREE.Mesh(eyeGeo, faceMat);
+                eyeL.position.set(-0.25, 1.1, 0.55);
+                const eyeR = new THREE.Mesh(eyeGeo, faceMat);
+                eyeR.position.set(0.25, 1.1, 0.55);
+                bounceGroup.add(eyeL);
+                bounceGroup.add(eyeR);
+
+                const mouthGeo = new THREE.TorusGeometry(0.05, 0.02, 8, 8, Math.PI);
+                const mouth = new THREE.Mesh(mouthGeo, faceMat);
+                mouth.position.set(0, 0.95, 0.58);
+                mouth.rotation.x = Math.PI; // Smile
+                bounceGroup.add(mouth);
+            }
+
+            // Arms (Pivoted at top)
+            const armGeo = new THREE.CapsuleGeometry(0.2, 0.6, 4, 8);
+            armGeo.translate(0, -0.3, 0); // Move pivot to top
+            
+            const armL = new THREE.Mesh(armGeo, limbMat);
+            armL.position.set(-0.9, 1.2, 0);
+            armL.castShadow = true;
+            
+            const armR = new THREE.Mesh(armGeo, limbMat);
+            armR.position.set(0.9, 1.2, 0);
+            armR.castShadow = true;
+            
+            bounceGroup.add(armL);
+            bounceGroup.add(armR);
+
+            // Legs (Attached to main group, not bounceGroup)
+            const legGeo = new THREE.CapsuleGeometry(0.22, 0.7, 4, 8);
+            legGeo.translate(0, -0.35, 0); // Pivot at top
+            
+            const legL = new THREE.Mesh(legGeo, limbMat);
+            legL.position.set(-0.3, 1.0, 0);
+            legL.castShadow = true;
+            
+            const legR = new THREE.Mesh(legGeo, limbMat);
+            legR.position.set(0.3, 1.0, 0);
+            legR.castShadow = true;
+
+            group.add(legL);
+            group.add(legR);
+
+            group.userData = {
+                type,
+                bounceGroup, armL, armR, legL, legR,
+                speed: type === 'player' ? 0.12 : (type === 'zombie' ? 0.04 : 0.06),
+                walkCycle: Math.random() * Math.PI * 2, // Random start phase
+                hp: type === 'player' ? 100 : (type === 'zombie' ? 20 : 15),
+                maxHp: type === 'player' ? 100 : (type === 'zombie' ? 20 : 15),
+                originalMaterial: mat,
+                isHit: false
+            };
+
+            return group;
+        }
+
+        const player = createBiped('player');
+        scene.add(player);
+
+        // --- 5. GAME STATE & MECHANICS ---
+        const enemies = [];
+        const projectiles = [];
+        const gems = []; // EXP gems
+        let playerEXP = 0;
+        let playerLevel = 1;
+        let expToNext = 10;
+        let lastAttackTime = 0;
+        const attackCooldown = 1.0; // Seconds
+
+        // Juice State
+        let shakeIntensity = 0;
+        let shakeTime = 0;
+
+        function triggerJuiceShake(intensity, duration) {
+            shakeIntensity = intensity;
+            shakeTime = duration;
+        }
+
+        function triggerJuiceFlash(colorHex, opacity) {
+            const flash = document.getElementById('flash-overlay');
+            flash.style.backgroundColor = colorHex;
+            flash.style.opacity = opacity;
+            setTimeout(() => { flash.style.opacity = '0'; }, 100);
+        }
+
+        function flashCharacter(charGroup, colorHex) {
+            if(charGroup.userData.isHit) return;
+            charGroup.userData.isHit = true;
+            
+            const flashMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.5 });
+            const origMats = [];
+            
+            charGroup.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    origMats.push({ mesh: child, mat: child.material });
+                    child.material = flashMat;
+                }
+            });
+
+            setTimeout(() => {
+                origMats.forEach(item => { item.mesh.material = item.mat; });
+                charGroup.userData.isHit = false;
+            }, 150);
+        }
+
+        // --- 6. CONTROLS (Virtual Joystick) ---
+        const joystickZone = document.getElementById('joystick-zone');
+        const joystickBg = document.getElementById('joystick-bg');
+        const joystickKnob = document.getElementById('joystick-knob');
+        
+        let isDragging = false;
+        let joystickCenter = { x: 0, y: 0 };
+        let moveVector = new THREE.Vector3(0, 0, 0);
+
+        function handleTouchStart(e) {
+            e.preventDefault();
+            const touch = e.changedTouches ? e.changedTouches[0] : e;
+            isDragging = true;
+            joystickCenter = { x: touch.clientX, y: touch.clientY };
+            
+            joystickBg.style.display = 'block';
+            joystickBg.style.left = touch.clientX + 'px';
+            joystickBg.style.top = touch.clientY + 'px';
+            joystickKnob.style.transform = `translate(-50%, -50%)`;
+            moveVector.set(0,0,0);
+        }
+
+        function handleTouchMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const touch = e.changedTouches ? e.changedTouches[0] : e;
+            
+            const deltaX = touch.clientX - joystickCenter.x;
+            const deltaY = touch.clientY - joystickCenter.y;
+            const distance = Math.min(Math.sqrt(deltaX*deltaX + deltaY*deltaY), 50);
+            const angle = Math.atan2(deltaY, deltaX);
+            
+            const knobX = Math.cos(angle) * distance;
+            const knobY = Math.sin(angle) * distance;
+            
+            joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+            
+            // Map 2D screen input to 3D XZ movement
+            // Up on screen (-Y) = -Z in 3D
+            moveVector.set(deltaX, 0, deltaY).normalize();
+        }
+
+        function handleTouchEnd(e) {
+            e.preventDefault();
+            isDragging = false;
+            joystickBg.style.display = 'none';
+            moveVector.set(0, 0, 0);
+        }
+
+        joystickZone.addEventListener('mousedown', handleTouchStart);
+        document.addEventListener('mousemove', handleTouchMove);
+        document.addEventListener('mouseup', handleTouchEnd);
+        
+        joystickZone.addEventListener('touchstart', handleTouchStart, {passive: false});
+        joystickZone.addEventListener('touchmove', handleTouchMove, {passive: false});
+        joystickZone.addEventListener('touchend', handleTouchEnd, {passive: false});
+
+        // Keyboard fallback
+        const keys = { w:false, a:false, s:false, d:false };
+        window.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
+        window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+
+        // --- 7. ANIMATION LOGIC ---
+        function animateCharacter(char, isMoving) {
+            const u = char.userData;
+            if (isMoving) {
+                u.walkCycle += 0.2;
+                // Swing limbs
+                u.legL.rotation.x = Math.sin(u.walkCycle) * 0.8;
+                u.legR.rotation.x = Math.sin(u.walkCycle + Math.PI) * 0.8;
+                u.armL.rotation.x = Math.sin(u.walkCycle + Math.PI) * 0.5;
+                u.armR.rotation.x = Math.sin(u.walkCycle) * 0.5;
+                // Bob body
+                u.bounceGroup.position.y = 1.2 + Math.abs(Math.sin(u.walkCycle)) * 0.2;
+                // Twist torso slightly
+                u.bounceGroup.rotation.y = Math.sin(u.walkCycle) * 0.1;
+            } else {
+                // Return to idle
+                u.legL.rotation.x = THREE.MathUtils.lerp(u.legL.rotation.x, 0, 0.1);
+                u.legR.rotation.x = THREE.MathUtils.lerp(u.legR.rotation.x, 0, 0.1);
+                u.armL.rotation.x = THREE.MathUtils.lerp(u.armL.rotation.x, 0, 0.1);
+                u.armR.rotation.x = THREE.MathUtils.lerp(u.armR.rotation.x, 0, 0.1);
+                u.bounceGroup.position.y = THREE.MathUtils.lerp(u.bounceGroup.position.y, 1.2, 0.1);
+                u.bounceGroup.rotation.y = THREE.MathUtils.lerp(u.bounceGroup.rotation.y, 0, 0.1);
+            }
+        }
+
+        // --- 8. COMBAT & SPAWNING ---
+        function spawnEnemy() {
+            if(enemies.length > 30) return; // Cap enemies
+            
+            const type = Math.random() > 0.3 ? 'zombie' : 'skeleton';
+            const enemy = createBiped(type);
+            
+            // Spawn in a circle outside camera view
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 30;
+            enemy.position.set(
+                player.position.x + Math.cos(angle) * radius,
+                0,
+                player.position.z + Math.sin(angle) * radius
+            );
+            
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+
+        setInterval(spawnEnemy, 1500); // Spawn every 1.5s
+
+        function spawnEXP(pos) {
+            const gemGeo = new THREE.OctahedronGeometry(0.3);
+            const gemMat = new THREE.MeshStandardMaterial({ color: 0x00FF00, emissive: 0x005500, metalness: 0.8, roughness: 0.2 });
+            const gem = new THREE.Mesh(gemGeo, gemMat);
+            gem.position.copy(pos);
+            gem.position.y = 0.5;
+            scene.add(gem);
+            gems.push(gem);
+        }
+
+        function fireProjectile() {
+            if (enemies.length === 0) return;
+            
+            // Find nearest enemy
+            let nearest = null;
+            let minDist = Infinity;
+            for(const e of enemies) {
+                const dist = player.position.distanceTo(e.position);
+                if(dist < minDist) {
+                    minDist = dist;
+                    nearest = e;
+                }
+            }
+
+            if (!nearest || minDist > 25) return; // Out of range
+
+            // Create Projectile (Math symbol/sphere)
+            const projGeo = new THREE.SphereGeometry(0.4, 8, 8);
+            const projMat = new THREE.MeshBasicMaterial({ color: 0x00FFaa }); // Bright cyan/green
+            const proj = new THREE.Mesh(projGeo, projMat);
+            
+            proj.position.copy(player.position);
+            proj.position.y = 1.5;
+            
+            const dir = new THREE.Vector3().subVectors(nearest.position, proj.position).normalize();
+            proj.userData = { velocity: dir.multiplyScalar(0.4), life: 100 };
+            
+            scene.add(proj);
+            projectiles.push(proj);
+
+            // Juice: Attack feel
+            triggerJuiceShake(0.1, 5); // Light shake
+            triggerJuiceFlash('#00FFaa', 0.2); // Green flash
+        }
+
+        // --- 9. MAIN LOOP ---
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // Keyboard input mapping
+            if(!isDragging) {
+                moveVector.set(0,0,0);
+                if(keys.w) moveVector.z -= 1;
+                if(keys.s) moveVector.z += 1;
+                if(keys.a) moveVector.x -= 1;
+                if(keys.d) moveVector.x += 1;
+                moveVector.normalize();
+            }
+
+            // Player Movement
+            const isMoving = moveVector.lengthSq() > 0;
+            if (isMoving) {
+                player.position.addScaledVector(moveVector, player.userData.speed);
+                // Rotate player to face movement direction
+                const angle = Math.atan2(moveVector.x, moveVector.z);
+                player.rotation.y = angle;
+            }
+            animateCharacter(player, isMoving);
+
+            // Camera follow (Smooth)
+            cameraRig.position.lerp(player.position, 0.1);
+
+            // Apply Camera Shake
+            if (shakeTime > 0) {
+                camera.position.x = (Math.random() - 0.5) * shakeIntensity;
+                camera.position.y = 15 + (Math.random() - 0.5) * shakeIntensity;
+                shakeTime--;
+            } else {
+                camera.position.set(0, 15, 20); // Reset local camera pos
+            }
+
+            // Auto Attack
+            if (time - lastAttackTime > attackCooldown) {
+                fireProjectile();
+                lastAttackTime = time;
+            }
+
+            // Update Projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const p = projectiles[i];
+                p.position.add(p.userData.velocity);
+                p.userData.life--;
+                
+                let hit = false;
+                // Check collision with enemies
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const e = enemies[j];
+                    if (p.position.distanceTo(e.position) < 1.2) {
+                        // Hit!
+                        e.userData.hp -= 10;
+                        flashCharacter(e, 0xFFFFFF); // White flash on hit
+                        
+                        // Pushback
+                        const pushDir = new THREE.Vector3().subVectors(e.position, p.position).normalize();
+                        e.position.addScaledVector(pushDir, 1.5);
+
+                        hit = true;
+                        
+                        if (e.userData.hp <= 0) {
+                            spawnEXP(e.position);
+                            scene.remove(e);
+                            enemies.splice(j, 1);
+                        }
+                        break;
+                    }
+                }
+
+                if (hit || p.userData.life <= 0) {
+                    scene.remove(p);
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Update Enemies
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                // Move towards player
+                const dir = new THREE.Vector3().subVectors(player.position, e.position);
+                dir.y = 0; 
+                if (dir.lengthSq() > 0.1) {
+                    dir.normalize();
+                    e.position.addScaledVector(dir, e.userData.speed);
+                    e.rotation.y = Math.atan2(dir.x, dir.z);
+                    animateCharacter(e, true);
+                }
+
+                // Check collision with player
+                if (e.position.distanceTo(player.position) < 1.2) {
+                    // Player takes damage
+                    player.userData.hp -= 1; // Continuous damage if touching
+                    updateHPBar();
+                    flashCharacter(player, 0xFF0000);
+                    triggerJuiceShake(0.5, 10); // Heavy shake
+                    triggerJuiceFlash('#FF0000', 0.4); // Red flash
+                    
+                    // Pushback enemy slightly
+                    e.position.addScaledVector(dir, -0.5);
+
+                    if (player.userData.hp <= 0) {
+                        alert("Game Over! (Refresh to restart)");
+                        player.userData.hp = player.userData.maxHp;
+                    }
+                }
+            }
+
+            // Update EXP Gems
+            for (let i = gems.length - 1; i >= 0; i--) {
+                const gem = gems[i];
+                gem.rotation.y += 0.05;
+                gem.rotation.x += 0.05;
+
+                // Magnet effect if close
+                const dist = gem.position.distanceTo(player.position);
+                if (dist < 4) {
+                    const dir = new THREE.Vector3().subVectors(player.position, gem.position).normalize();
+                    gem.position.addScaledVector(dir, 0.2); // Fly to player
+                }
+
+                // Collect
+                if (dist < 1.0) {
+                    playerEXP += 2;
+                    scene.remove(gem);
+                    gems.splice(i, 1);
+                    updateEXPBar();
+                }
+            }
+
+            // Animate Butterflies
+            butterflies.forEach(b => {
+                b.position.x += Math.cos(b.userData.angle) * b.userData.speed;
+                b.position.z += Math.sin(b.userData.angle) * b.userData.speed;
+                b.position.y += Math.sin(time * 5) * 0.01;
+                if(Math.random() < 0.01) b.userData.angle += (Math.random()-0.5)*2;
+                
+                // Flap wings
+                b.userData.wing1.rotation.y = Math.sin(time * 20) * 0.8;
+                b.userData.wing2.rotation.y = -Math.sin(time * 20) * 0.8;
+            });
+
+            renderer.render(scene, cameraRig);
+        }
+
+        function updateHPBar() {
+            const pct = Math.max(0, (player.userData.hp / player.userData.maxHp) * 100);
+            document.getElementById('hp-bar-fill').style.width = pct + '%';
+        }
+
+        function updateEXPBar() {
+            if (playerEXP >= expToNext) {
+                playerEXP -= expToNext;
+                playerLevel++;
+                expToNext = Math.floor(expToNext * 1.5); // Increase requirement
+                document.getElementById('level-text').innerText = 'Lv. ' + playerLevel;
+                // Level up Juice
+                triggerJuiceFlash('#FFFF00', 0.5);
+                triggerJuiceShake(0.3, 15);
+            }
+            const pct = (playerEXP / expToNext) * 100;
+            document.getElementById('exp-bar-fill').style.width = pct + '%';
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Loop
+        animate();
+    </script>
+</body>
+</html>
